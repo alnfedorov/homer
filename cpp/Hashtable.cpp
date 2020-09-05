@@ -113,8 +113,7 @@ Intlist::Intlist() {
 }
 LongIntlist::LongIntlist() {
 }
-Floatlist::Floatlist() {
-}
+
 Doublelist::Doublelist() {
 }
 Intlist::Intlist(int I, char* str) {
@@ -133,14 +132,7 @@ LongIntlist::LongIntlist(long long int I, char* str) {
 	strcpy(hashstrs[0], str);
 	length = 1;
 }
-Floatlist::Floatlist(float I, char* str) {
-	elements = new float[1];
-	hashstrs = new char*[1];
-	elements[0] = I;
-	hashstrs[0] = new char[strlen(str)+1];
-	strcpy(hashstrs[0], str);
-	length = 1;
-}
+
 Doublelist::Doublelist(double I, char* str) {
 	elements = new double[1];
 	hashstrs = new char*[1];
@@ -203,21 +195,7 @@ LongIntlist::~LongIntlist() {
 		elements = NULL;
 	}
 }
-Floatlist::~Floatlist() {
-	if (hashstrs != NULL) {
-		for (int i=0;i<length;i++) {
-			if (hashstrs[i] != NULL)
-				delete[] (hashstrs[i]);
-				hashstrs[i] = NULL;
-		}
-		delete[] hashstrs;
-		hashstrs = NULL;
-	}
-	if (elements != NULL) {
-		delete[] elements;
-		elements = NULL;
-	}
-}
+
 Doublelist::~Doublelist() {
 	if (hashstrs != NULL) {
 		for (int i=0;i<length;i++) {
@@ -259,14 +237,7 @@ long long int LongIntlist::search(char* str) {
 	}
 	return EMPTY_INT;
 }
-float Floatlist::search(char* str) {
-	for (int i=0;i<length;i++) {
-		if (strcmp(str,hashstrs[i]) == 0) {
-			return elements[i];
-		}
-	}
-	return EMPTY_FLOAT;
-}
+
 double Doublelist::search(char* str) {
 	for (int i=0;i<length;i++) {
 		if (strcmp(str,hashstrs[i]) == 0) {
@@ -348,29 +319,7 @@ int LongIntlist::insert(long long int I, char* str) {
 	length++;
 	return 1;
 }
-int Floatlist::insert(float I, char* str) {
-	for (int i=0;i<length;i++) {
-		if (strcmp(str,hashstrs[i])==0) {
-			elements[i] = I;
-			return 0;
-		}
-	}
-	float* newelements = new float[length+1];
-	char** newnames = new char*[length+1];
-	for (int i=0;i<length;i++) {
-		newelements[i] = elements[i];
-		newnames[i] = hashstrs[i];
-	}
-	delete []elements;
-	delete []hashstrs;
-	elements = newelements;
-	hashstrs = newnames;
-	elements[length] = I;
-	hashstrs[length] = new char[strlen(str)+1];
-	strcpy(hashstrs[length], str);
-	length++;
-	return 1;
-}
+
 int Doublelist::insert(double I, char* str) {
 	for (int i=0;i<length;i++) {
 		if (strcmp(str,hashstrs[i])==0) {
@@ -464,29 +413,7 @@ int LongIntlist::remove(char* str) {
 	if (found) length--;
 	return returnObj;
 }
-	
-float Floatlist::remove(char* str) {
-	int found = 0;
-	float returnObj=EMPTY_FLOAT;
-	for (int i=0;i<length;i++) {
-		if (strcmp(str,hashstrs[i])==0) {
-			found = 1;
-			returnObj = elements[i];
-			delete[] (hashstrs[i]);
-		}
-		if (found) {
-			if (i==length-1) {
-				elements[i]=EMPTY_FLOAT;
-				hashstrs[i]=NULL;
-			} else {
-				elements[i] = elements[i+1];
-				hashstrs[i] = hashstrs[i+1];
-			}
-		}
-	}
-	if (found) length--;
-	return returnObj;
-}
+
 double Doublelist::remove(char* str) {
 	int found = 0;
 	double returnObj=EMPTY_DOUBLE;
@@ -524,10 +451,7 @@ LongInttable::LongInttable() {
 	maxsize = DEFAULT_SIZE;
 	init();
 }
-Floattable::Floattable() {
-	maxsize = DEFAULT_SIZE;
-	init();
-}
+
 Doubletable::Doubletable() {
 	maxsize = DEFAULT_SIZE;
 	init();
@@ -544,10 +468,7 @@ LongInttable::LongInttable(int size) {
 	maxsize = size;
 	init();
 }
-Floattable::Floattable(int size) {
-	maxsize = size;
-	init();
-}
+
 Doubletable::Doubletable(int size) {
 	maxsize = size;
 	init();
@@ -577,14 +498,7 @@ void LongInttable::init() {
 	}
 	total = 0;
 }
-void Floattable::init() {
-	hash = NULL;
-	hash = new Floatlist*[maxsize];
-	for (int i=0;i<maxsize;i++) {
-		hash[i] = NULL;
-	}
-	total = 0;
-}
+
 void Doubletable::init() {
 	hash = NULL;
 	hash = new Doublelist*[maxsize];
@@ -630,18 +544,7 @@ LongInttable::~LongInttable() {
 		hash = NULL;
 	}
 }
-Floattable::~Floattable() {
-	if (hash != NULL) {
-		for (int i=0;i<maxsize;i++) {
-			if (hash[i] != NULL) {
-				delete hash[i];
-				hash[i] = NULL;
-			}
-		}
-		delete []hash;
-		hash = NULL;
-	}
-}
+
 Doubletable::~Doubletable() {
 	if (hash != NULL) {
 		for (int i=0;i<maxsize;i++) {
@@ -692,15 +595,7 @@ long long int LongInttable::search(char* hashstr) {
 		return hash[bin]->search(hashstr);
 	}
 }
-float Floattable::search(char* hashstr) {
-	unsigned int hashval = hashfunc(hashstr);
-	unsigned int bin = hashval % maxsize;
-	if (hash[bin] == NULL) {
-		return EMPTY_FLOAT;
-	} else {
-		return hash[bin]->search(hashstr);
-	}
-}
+
 double Doubletable::search(char* hashstr) {
 	unsigned int hashval = hashfunc(hashstr);
 	unsigned int bin = hashval % maxsize;
@@ -744,17 +639,7 @@ void LongInttable::insert(long long int I, char* hashstr) {
 	}
 	total+=add;
 }
-void Floattable::insert(float I, char* hashstr) {
-	unsigned int hashval = hashfunc(hashstr);
-	unsigned int bin = hashval % maxsize;
-	int add = 1;
-	if (hash[bin] == NULL) {
-		hash[bin] = new Floatlist(I,hashstr);
-	} else {
-		add = hash[bin]->insert(I,hashstr);
-	}
-	total+=add;
-}
+
 void Doubletable::insert(double I, char* hashstr) {
 	unsigned int hashval = hashfunc(hashstr);
 	unsigned int bin = hashval % maxsize;
@@ -804,18 +689,7 @@ int LongInttable::remove(char* str) {
 		return val;
 	}
 }
-float Floattable::remove(char* str) {
-	unsigned int hashval = hashfunc(str);
-	unsigned int bin = hashval % maxsize;
-	if (hash[bin] == NULL) {
-		return EMPTY_FLOAT;
-	} else {
-		float val = 0.0;
-		val = hash[bin]->remove(str);
-		if (val < EMPTY_FLOAT-1e3 || val > EMPTY_FLOAT+1e3) total--;
-		return val;
-	}
-}
+
 double Doubletable::remove(char* str) {
 	unsigned int hashval = hashfunc(str);
 	unsigned int bin = hashval % maxsize;
@@ -869,18 +743,7 @@ char** LongInttable::keys() {
 	}
 	return allkeys;
 }
-char** Floattable::keys() {
-	char** allkeys = new char*[total];
-	int index = 0;
-	for (int i=0;i<maxsize;i++) {
-		if (hash[i] != NULL) {
-			for (int j=0;j<hash[i]->length;j++) {
-				copystrhash(allkeys[index++], hash[i]->hashstrs[j]);
-			}
-		}
-	}
-	return allkeys;
-}
+
 char** Doubletable::keys() {
 	char** allkeys = new char*[total];
 	int index = 0;
@@ -933,15 +796,6 @@ unsigned int LongInttable::hashfunc(char* str) {
 	return hashNum;
 }
 
-unsigned int Floattable::hashfunc(char* str) {
-	unsigned int hashNum = 5381;
-	int c = *str++;
-	while (c) {
-		hashNum = ((hashNum << 5) + hashNum*33) + c;
-		c=*str++;
-	}
-	return hashNum;
-}
 unsigned int Doubletable::hashfunc(char* str) {
 	unsigned int hashNum = 5381;
 	int c = *str++;
@@ -953,20 +807,3 @@ unsigned int Doubletable::hashfunc(char* str) {
 }
 
 
-void Floattable::stats() {
-	int a=0,b=0,c=0,d=0;
-	for (int i=0;i<maxsize;i++ ){
-		if (hash[i] == NULL) {
-			a++;
-		} else {
-			if (hash[i]->length < 2) {
-				b++;
-			} else if (hash[i]->length < 5) {
-				c++;
-			} else {
-				d++;
-			}
-		}
-	}
-	fprintf(stderr, "Stats:\nNULL: %d\n1: %d\n2-4: %d\n>4: %d\n",a,b,c,d);
-}

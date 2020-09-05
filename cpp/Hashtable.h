@@ -25,8 +25,6 @@
 
 
 #define EMPTY_INT -1080706050
-#define EMPTY_FLOAT -1.23e10
-#define EMPTY_FLOAT_CHECK -1.20e10
 #define EMPTY_DOUBLE -1.23e100
 #define EMPTY_DOUBLE_CHECK -1.20e100
 
@@ -46,7 +44,6 @@ public:
 	void* search(char*);
 	int insert(void* obj, char* str);
 	void* remove(char* str);
-	char** keys();
 };
 
 class Intlist {
@@ -60,7 +57,6 @@ public:
 	int search(char*);
 	int insert(int I, char* str);
 	int remove(char* str);
-	char** keys();
 };
 
 class LongIntlist {
@@ -74,20 +70,6 @@ public:
 	long long int search(char*);
 	int insert(long long int I, char* str);
 	int remove(char* str);
-	char** keys();
-};
-
-class Floatlist {
-public:
-	int length;
-	float* elements;
-	char** hashstrs;
-	Floatlist();
-	Floatlist(float F, char* str);
-	~Floatlist();
-	float search(char*);
-	int insert(float F, char* str);
-	float remove(char* str);
 	char** keys();
 };
 
@@ -154,23 +136,6 @@ public:
 	LongIntlist** hash;
 	char** keys();
 	unsigned int hashfunc(char*);
-};
-
-class Floattable {
-public:
-	Floattable();
-	Floattable(int);
-	~Floattable();
-	void init();
-	void insert(float, char*);
-	float search(char*);
-	float remove(char*);
-	int maxsize;
-	int total;
-	Floatlist** hash;
-	char** keys();
-	unsigned int hashfunc(char*);
-	void stats();
 };
 
 class Doubletable {
