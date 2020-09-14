@@ -32,7 +32,6 @@ std::vector<std::string> split(const std::string& s, char delimiter)
 // class PeakFinder ---------------------------------------------------------------------
 
 PeakFinder::PeakFinder() {
-    name = NULL;
     outputFileName = "";
     peakSize = 0;
     localSize = 10000;
@@ -43,7 +42,6 @@ PeakFinder::PeakFinder() {
     totalTags = 0.0;
     tagsUsedForClustering = 0.0;
     maxtbp = 0.0;
-    maxtbpInput = 0.0;
     strand = BOTH_STRANDS;
     regionSubDivision = PEAKFRACTION_REGION_MINDIST;
     gsize = DEFAULT_GSIZE;
@@ -67,7 +65,6 @@ PeakFinder::PeakFinder() {
     fdrSize = PEAKFINDER_FDRSIZE;
     extraheader = NULL;
     stitchMode = REGION_MODE_HISTONE;
-    maxBodySize = GROSEQ_MAXBODYSIZE;
 
     style = PEAK_STYLE_HISTONE;
 
@@ -76,15 +73,14 @@ PeakFinder::PeakFinder() {
     clonalFold = 2.0;
     numPeaks = 0;
 
-    cmd = NULL;
-
     tags = NULL;
     input = NULL;
 }
 
 PeakFinder::~PeakFinder() {
-    if (name != NULL) delete[]name;
-    if (extraheader != NULL) delete[]extraheader;
+    delete[]extraheader;
+    delete[]fdrTable;
+    delete[]poissonTable;
 }
 
 void PeakFinder::addHeader(char *str) {
@@ -107,27 +103,16 @@ void PeakFinder::setTagLibraries(TagLibrary *exp, TagLibrary *i) {
     input = i;
 }
 
-void PeakFinder::setGenomeSize(long long int genomeSize) {
-    gsize = genomeSize;
-}
-
-void PeakFinder::setCMD(char *str) {
-    if (str == NULL) return;
-    cmd = new char[strlen(str) + 1];
-    strcpy(cmd, str);
-}
-
 void PeakFinder::setOutputFile(std::string fname) {
     outputFileName = std::move(fname);
 }
 
 void PeakFinder::determineMaxTBP() {
     maxtbp = 1.0;
-    maxtbpInput = 1.0;
     fprintf(stderr, "\tTotal Tags = %.1lf\n", totalTags);
     fprintf(stderr, "\tTags per bp = %.6lf\n", tbp);
     if (tbp > tbpThreshold) maxtbp = floor(tbp / tbpThreshold);
-    if (tbpInput > tbpThreshold) maxtbpInput = floor(tbp / tbpThreshold);
+    if (tbpInput > tbpThreshold) floor(tbp / tbpThreshold);
     fprintf(stderr, "\tMax tags per bp set automatically to %.1f\n", maxtbp);
 }
 
@@ -189,20 +174,20 @@ PeakLibrary *PeakFinder::findPeaks() {
 
     PeakLibrary *filteredPeaks = NULL;
     int halfPeakSize = (peakSize + 1) / 2;
-
-    PeakLibrary *putativePeaks = tags->findPutativePeaks(peakSize, curMinDist, strand, minTagThresh);
-
     tagsUsedForClustering = tags->getAdjustedTagTotal();
 
-    fprintf(stderr, "\t\tTags Used for cluster (less clonal tags) = %.1lf / %.1lf\n",
-            tagsUsedForClustering, totalTags);
+    {
+        PeakLibrary *putativePeaks = tags->findPutativePeaks(peakSize, curMinDist, strand, minTagThresh);
 
-    // remove peaks not meeting fdr levels or poisson p-value or absolute tag thresh
-    approxFdrTable();
-    addHeader((char *) "findPeaks Score");
-    filteredPeaks = filterPeaks(putativePeaks);
-    delete putativePeaks;
-    putativePeaks = NULL;
+        fprintf(stderr, "\t\tTags Used for cluster (less clonal tags) = %.1lf / %.1lf\n",
+                tagsUsedForClustering, totalTags);
+
+        // remove peaks not meeting fdr levels or poisson p-value or absolute tag thresh
+        approxFdrTable();
+        addHeader((char *) "findPeaks Score");
+        filteredPeaks = filterPeaks(putativePeaks);
+        delete putativePeaks;
+    }
 
     filteredPeaks->setPeakTagSizeRefPos(NULL_OFFSET, -1 * halfPeakSize, halfPeakSize);
 
@@ -350,7 +335,6 @@ PeakLibrary *PeakFinder::filterPeaks(PeakLibrary *putativePeaks) {
 
     auto *goodPeaks = new PeakLibrary();
     int numGood = 0;
-    char *strScore = new char[10000];
     tagsInPeaks = 0.0;
 
     double threshold2Use = fdrThresh;
@@ -364,14 +348,18 @@ PeakLibrary *PeakFinder::filterPeaks(PeakLibrary *putativePeaks) {
         auto p = it.second;
         if (p->v >= threshold2Use - 000000.1) {
             tagsInPeaks += (double) p->v;
-            sprintf(strScore, "%f", p->v);
-            p->addData(strScore);
+
+            static auto fmt = "%f";
+            int sz = std::snprintf(nullptr, 0, fmt, p->v);
+            auto buf = new char[sz+1];
+            std::snprintf(buf, sz+1, fmt, p->v);
+            p->addData(buf);
+
             goodPeaks->addPeak(p);
             numGood++;
         }
     }
     delete[]peakHeights;
-    delete[]strScore;
     fprintf(stderr, "\t%d peaks passed threshold\n", numGood);
     goodPeaks->sortChr();
 
@@ -432,7 +420,7 @@ void PeakFinder::print(FILE *fp) {
         fprintf(fp, "# Maximum fold under expected unique positions for tags = %.2lf\n", clonalFold);
     }
 
-    fprintf(fp, "#\n# cmd = %s\n", cmd);
+//    fprintf(fp, "#\n# cmd = %s\n", cmd);
     fprintf(fp, "#\n# Column Headers:\n");
     fprintf(fp, "#PeakID\tchr\tstart\tend\tstrand");
     fprintf(fp, "\tNormalized Tag Count");
@@ -497,27 +485,26 @@ void PeakFinder::approxFdrTable() {
     if (filterMode == PEAKFINDER_FILTER_MODE_POISSON) {
         fprintf(stderr, "\tPoisson Threshold set at %d tags\n", (int) poissonThresh);
     }
-    return;
-    //exit(0);
+       //exit(0);
 
-    cum = 0.0;
-
-    for (int i = 0; i < fdrSize; i++) {
-        double lp = logPoisson(i, tpp);
-        lp = exp(lp);
-        //fprintf(stderr, "\t%d\t%.9lf\t%.9lf\t%.3f\n",i, lp, 1-cum,numTests*(1-cum));
-        double poissonCum = 1 - cum;
-        fdrTable[i] = numTests * poissonCum;
-        poissonTable[i] = poissonCum;
-        fprintf(stderr, "\t%d\t%lf\t%le\t%le\t%le\n", i, fdrTable[i], numTests, poissonCum, lp);
-        if (poissonThresh < 0.01 && poissonCum < poisson) {
-            poissonThresh = (float) i;
-            if (filterMode == PEAKFINDER_FILTER_MODE_POISSON) {
-                fprintf(stderr, "\tPoisson Threshold set at %d tags\n", i);
-            }
-        }
-        cum += lp;
-    }
+//    cum = 0.0;
+//
+//    for (int i = 0; i < fdrSize; i++) {
+//        double lp = logPoisson(i, tpp);
+//        lp = exp(lp);
+//        //fprintf(stderr, "\t%d\t%.9lf\t%.9lf\t%.3f\n",i, lp, 1-cum,numTests*(1-cum));
+//        double poissonCum = 1 - cum;
+//        fdrTable[i] = numTests * poissonCum;
+//        poissonTable[i] = poissonCum;
+//        fprintf(stderr, "\t%d\t%lf\t%le\t%le\t%le\n", i, fdrTable[i], numTests, poissonCum, lp);
+//        if (poissonThresh < 0.01 && poissonCum < poisson) {
+//            poissonThresh = (float) i;
+//            if (filterMode == PEAKFINDER_FILTER_MODE_POISSON) {
+//                fprintf(stderr, "\tPoisson Threshold set at %d tags\n", i);
+//            }
+//        }
+//        cum += lp;
+//    }
 
 }
 
@@ -533,15 +520,10 @@ PeakLibrary::PeakLibrary(int expectedNumPeaks) {
 }
 
 void PeakLibrary::initialize(int expectedNumPeaks) {
-    duplicates = new std::unordered_map<std::string,int>((int) (expectedNumPeaks / 5));
-    exps = NULL;
-    name = NULL;
-    genome = NULL;
+    duplicates.reserve(expectedNumPeaks / 5);
     numPeaks = 0;
-    avgPeakSize = 0.0;
     tagsInPeaks = 0.0;
     fixedFlag = 0;
-    peakOrder = NULL;
     duplicateWarningFlag = 1;
 }
 
@@ -552,14 +534,6 @@ PeakLibrary::~PeakLibrary() {
     for(auto& it: peaks)
         if (it.second != NULL)
             delete it.second;
-    delete duplicates;
-    if (name != NULL) delete[]name;
-    if (genome != NULL) delete[]genome;
-    if (exps != NULL) {
-        delete[]exps;
-    }
-    if (peakOrder != NULL) delete[]peakOrder;
-
 }
 
 void PeakLibrary::sortChr() {
@@ -568,41 +542,37 @@ void PeakLibrary::sortChr() {
     {
         auto ct = it.second;
         ct->sort();
-        numPeaks += ct->numPeaks;
+        numPeaks += ct->peaks.size();
     }
 }
 
-Peak *PeakLibrary::addPeak(char *name, const char *chr, int start, int end, int midpoint, char dir,
+Peak *PeakLibrary::addPeak(const std::string &name, const std::string &chr, int start, int end, int midpoint, char dir,
                            float value, float ratio, char *extraData, int mappability, unsigned int priority) {
     Peak *oldPeak = NULL;
     Peak *p = NULL;
-    char *tmpName = NULL;
-    if (name == NULL) {
-        int L = strlen(chr) + 26 + 1 + 6;
-        tmpName = new char[L];
-        sprintf(tmpName, "%s:%d-%d", chr, start, end);
-        name = tmpName;
+    if (!name.empty()) {
+        auto it = peaks.find(name);
+        if (it != peaks.end())
+            oldPeak = it->second;
     }
-    if (name != NULL) oldPeak = peaks[name];
+
     static int warningIssued = 0;
     if (oldPeak != NULL) {
-        auto it = duplicates->find(name);
+        auto it = duplicates.find(name);
         int dupCount;
-        if (it == duplicates->end())
+        if (it == duplicates.end())
             dupCount = 1;
         else
             dupCount = it->second;
         dupCount++;
-        //fprintf(stderr, "dupCount=%d \t%s\n",dupCount,name);
-        dupCount[name] = dupCount;
+        duplicates[name] = dupCount;
 
-        char *newname = new char[strlen(name) + 20];
-        sprintf(newname, "%s--%d", name, dupCount);
+        auto newname = name + "--" + std::to_string(dupCount);
         if (priority < 1) {
             if (warningIssued == 0 && duplicateWarningFlag) {
-                fprintf(stderr, "\tDuplicate peak name (%s) - this could potentially cause problems\n", name);
+                fprintf(stderr, "\tDuplicate peak name (%s) - this could potentially cause problems\n", name.c_str());
                 fprintf(stderr, "\t\tSometimes unavoidable for BED/2DBED formats\n");
-                fprintf(stderr, "\t\tNew name for this peak is %s\n", newname);
+                fprintf(stderr, "\t\tNew name for this peak is %s\n", newname.c_str());
             } else if (warningIssued % 1000 == 0 && duplicateWarningFlag) {
                 fprintf(stderr, "\t\tWarning over %d peaks with duplicate names\n", warningIssued);
             }
@@ -610,12 +580,11 @@ Peak *PeakLibrary::addPeak(char *name, const char *chr, int start, int end, int 
         }
         auto it2 = peaks.find(newname);
         if (it2 != peaks.end() && duplicateWarningFlag) {
-            fprintf(stderr, "There's a problem!!! %s - %d %s\n", newname, dupCount, name);
+            fprintf(stderr, "There's a problem!!! %s - %d %s\n", newname.c_str(), dupCount, name.c_str());
         }
         p = new Peak(newname, name, chr, start, end, midpoint, dir, value, ratio, extraData, mappability, priority);
-        delete[]newname;
     } else {
-        p = new Peak(name, NULL, chr, start, end, midpoint, dir, value, ratio, extraData, mappability, priority);
+        p = new Peak(name, "", chr, start, end, midpoint, dir, value, ratio, extraData, mappability, priority);
     }
     peaks[p->name] = p;
     auto it = chrs.find(chr);
@@ -623,13 +592,12 @@ Peak *PeakLibrary::addPeak(char *name, const char *chr, int start, int end, int 
         chrs[chr] = new ChrPeaks();
     chrs[chr]->addPeak(p);
     numPeaks++;
-    if (tmpName != NULL) delete[]tmpName;
     return p;
 }
 
 void PeakLibrary::addPeak(Peak *p) {
-    char *n = p->name;
-    if (p->ogname != NULL) {
+    auto& n = p->name;
+    if (!p->ogname.empty()) {
         n = p->ogname;
     }
     addPeak(n, p->chr, p->start, p->end, p->refPos, p->strand, p->v, p->focusRatio, p->data,
@@ -697,11 +665,10 @@ void PeakLibrary::setPeakTagSizeFixed(int startOffset, int endOffset) {
 }
 
 void PeakLibrary::setDefaultPeakOrder() {
-    if (peakOrder != NULL) {
-        delete[]peakOrder;
-    }
     if (numPeaks < 1) return;
-    peakOrder = new Peak *[numPeaks];
+    peakOrder = std::vector<Peak*>();
+    peakOrder.resize(numPeaks);
+
     size_t i = 0;
     for (auto& it: peaks) {
         peakOrder[i] = it.second;
@@ -711,8 +678,6 @@ void PeakLibrary::setDefaultPeakOrder() {
 
 PeakLibrary *PeakLibrary::filterClonalPeaks(TagLibrary *tags, int peakSize,
                                             double threshold, int mode, char strand) {
-
-    char *outputstr = new char[10000];
     int halfPeakSize = (peakSize) / 2;
 
     float currentMaxTBP = tags->maxtbp;
@@ -764,17 +729,22 @@ PeakLibrary *PeakLibrary::filterClonalPeaks(TagLibrary *tags, int peakSize,
         if (index > expectedSize - 1) index = expectedSize - 1;
         double et = expected[index];
         double fold = et / ct;
-//fprintf(stderr, "%s\t%lf\t%lf\t%d\t%lf\n", keys[i], pt, ct, index,et);
         if (ct > 0 && fold < threshold) {
             goodPeaks->tagsInPeaks += pt;
             numGood++;
             Peak *p = it.second;
-            sprintf(outputstr, "%.2lf", fold);
-            p->addData(outputstr);
+
+            static auto fmt = "%.2lf";
+            int sz = std::snprintf(nullptr, 0, fmt, fold);
+            auto buf = new char[sz+1];
+            std::snprintf(buf, sz+1, fmt, fold);
+            p->addData(buf);
+
             goodPeaks->addPeak(p);
         }
     }
-    delete[]outputstr;
+    delete[] expected;
+
     if (totalChecked == 0) {
         fprintf(stderr, "\t!! Something is wrong - no peaks were checked!\n");
     } else {
@@ -787,9 +757,6 @@ PeakLibrary *PeakLibrary::filterClonalPeaks(TagLibrary *tags, int peakSize,
 
 PeakLibrary *PeakLibrary::filterLocalPeaks(TagLibrary *tags, int peakSize, int localSize,
                                            double foldThresh, double poissonThresh, int mode, char strand) {
-
-    char *outputstr = new char[10000];
-
     int halfPeakSize = (peakSize) / 2;
     int halfLocalSize = (localSize) / 2;
 
@@ -856,12 +823,16 @@ PeakLibrary *PeakLibrary::filterLocalPeaks(TagLibrary *tags, int peakSize, int l
             goodPeaks->tagsInPeaks += pt;
             numGood++;
             Peak *p = it.second;
-            sprintf(outputstr, "%.2lf\t%.2le", fold, pp);
-            p->addData(outputstr);
+
+            static auto fmt = "%.2lf\t%.2le";
+            int sz = std::snprintf(nullptr, 0, fmt, fold, pp);
+            auto buf = new char[sz+1];
+            std::snprintf(buf, sz+1, fmt, fold, pp);
+            p->addData(buf);
+
             goodPeaks->addPeak(p);
         }
     }
-    delete[]outputstr;
     if (totalChecked == 0) {
         fprintf(stderr, "\t!! Something is wrong - no peaks were checked!\n");
     } else {
@@ -877,29 +848,13 @@ PeakLibrary *PeakLibrary::filterLocalPeaks(TagLibrary *tags, int peakSize, int l
 PeakLibrary *PeakLibrary::getDifferentialPeaks(TagLibrary *tags, TagLibrary *input,
                                                double foldThresh, double poissonThresh, int mode, int start, int end,
                                                char strand, int strFlag) {
-
-
-    char *outputstr = new char[10000];
-    //int tagsIndex = addTagLibrary(tags);
-    //int inputIndex = addTagLibrary(input);
-    //Doubletable* expTags = countPeakTags(tagsIndex,start,end,strand,COUNT_MODE_TOTAL);
-    //Doubletable* inputTags = countPeakTags(inputIndex,start,end,strand,COUNT_MODE_TOTAL);
     auto expTags = countPeakTagsLowMemory(tags, strand, COUNT_MODE_TOTAL, NULL);
     auto inputTags = countPeakTagsLowMemory(input, strand, COUNT_MODE_TOTAL, NULL);
-
-    //double peakSize = ((double)(end-start));
-    if (fixedFlag) {
-        //peakSize = avgPeakSize;
-    }
-    //fprintf(stderr, "peakSize = %lf\n", peakSize);
 
     double inputPseudoCount = 0.0;
     double tagPseudoCount = 0.0;
     if (input->tbp > 0.0) inputPseudoCount = 0.5;
     if (tags->tbp > 0.0) tagPseudoCount = 0.5;
-    //if (input->tbp > 0.0) inputPseudoCount = ((double)(peakSize))*input->tbp;
-    //if (tags->tbp > 0.0) tagPseudoCount = ((double)(peakSize))*tags->tbp;
-    //fprintf(stderr, "\tpeudo= %lf\n",  tagPseudoCount);
 
     double minTotal = tags->totalTags;
     if (input->totalTags < tags->totalTags) minTotal = input->totalTags;
@@ -948,11 +903,7 @@ PeakLibrary *PeakLibrary::getDifferentialPeaks(TagLibrary *tags, TagLibrary *inp
         }
 
         int tpInt = (int) tpn;
-        //since the input is our "expected" meausrement, that becomes lambda
-        //double cumPvalue = cumulativePoisson(tpInt, ipn);
-        //double pp = 1-cumPvalue;
         double pp = exp(ilogCumulativePoisson(tpInt, ipn));
-        //fprintf(stderr, "%.1lf\t%.1lf\t%lf\n", tpn, ipn, pp);
         int poissonGood = 0;
         if (poissonThresh < 1.0) {
             if (mode == DIFFPEAK_MODE_DIFF) {
@@ -969,8 +920,6 @@ PeakLibrary *PeakLibrary::getDifferentialPeaks(TagLibrary *tags, TagLibrary *inp
                 }
             } else if (mode == DIFFPEAK_MODE_REV) {
                 int ipInt = (int) ipn;
-                //double cumPvalueR = cumulativePoisson(ipInt, tpn);
-                //double ppR = 1-cumPvalue;
                 double ppR = exp(ilogCumulativePoisson(ipInt, tpn));
                 if (ppR < poissonThresh && foldchange < 1) {
                     poissonGood = 1;
@@ -985,14 +934,16 @@ PeakLibrary *PeakLibrary::getDifferentialPeaks(TagLibrary *tags, TagLibrary *inp
             goodPeaks->tagsInPeaks += tp;
             Peak *p = peaks[it.first];
             if (strFlag) {
-                sprintf(outputstr, "%.1lf\t%.1lf\t%.2lf\t%.2le", tpn, ipn, foldchange, pp);
-                p->addData(outputstr);
+                static auto fmt = "%.1lf\t%.1lf\t%.2lf\t%.2le";
+                int sz = std::snprintf(nullptr, 0, fmt, tpn, ipn, foldchange, pp);
+                auto buf = new char[sz+1];
+                std::snprintf(buf, sz+1, fmt, tpn, ipn, foldchange, pp);
+                p->addData(buf);
             }
             goodPeaks->addPeak(p);
             numGood++;
         }
     }
-    delete[]outputstr;
 
     if (totalChecked == 0) {
         fprintf(stderr, "\t!! Something is wrong - no peaks were checked!\n");
@@ -1001,12 +952,11 @@ PeakLibrary *PeakLibrary::getDifferentialPeaks(TagLibrary *tags, TagLibrary *inp
         fprintf(stderr, "\tDifferential Peaks: %d of %d (%.2lf%% passed)\n", numGood, totalChecked, ratio * 100.0);
     }
     goodPeaks->sortChr();
-    //fprintf(stderr, "totalTagsInPeaks=%lf\n", goodPeaks->tagsInPeaks);
     return goodPeaks;
 }
 
 PeakLibrary *PeakLibrary::stitchRegions(int maxDistance, int mode) const {
-    PeakLibrary *regions = new PeakLibrary();
+    auto *regions = new PeakLibrary();
     //regions->tagsInPeaks = 0.0;
     for (auto& it: chrs)
         it.second->stitchRegions(regions, maxDistance, mode);
@@ -1038,82 +988,51 @@ ChrTags::ChrTags(std::string newchr, std::function<void()> callback) {
     appearentSize = 0;
 }
 
-ChrPeaks::ChrPeaks() {
-    //peaks = new Peak*[PEAK_INC];
-    peaks = NULL;
-    peakList = NULL;
-    numPeaks = 0;
-}
-
-ChrPeaks::~ChrPeaks() {
-    if (peaks != NULL) delete[]peaks;
-    if (peakList != NULL) delete peakList;
-}
-
 void ChrPeaks::addPeak(Peak *p) {
-    if (peakList == NULL) {
-        peakList = new LinkedList();
-    }
-    peakList->add(p);
+    peaks.push_back(p);
 }
 
 void ChrPeaks::sort() {
-    int numListPeaks = 0;
-    Peak **array = NULL;
-    if (peakList != NULL) {
-        array = (Peak **) peakList->toArray(numListPeaks);
-    }
-
-    int newNumPeaks = numPeaks + numListPeaks;
-    Peak **newpeaks = new Peak *[newNumPeaks];
-    for (int i = 0; i < numPeaks; i++) {
-        newpeaks[i] = peaks[i];
-    }
-    for (int i = 0; i < numListPeaks; i++) {
-        newpeaks[i + numPeaks] = array[i];
-    }
-    delete[]peaks;
-    delete[]array;
-    delete peakList;
-    peakList = NULL;
-
-    peaks = newpeaks;
-    numPeaks = newNumPeaks;
-    if (numPeaks < 2) return;
-    qsort(peaks, numPeaks, sizeof(Peak *), &cmpPeaks);
+    std::sort(peaks.begin(), peaks.end(), [](const Peak* a, const Peak* b) {
+        auto cc = chrcmp(a->chr, b->chr);
+        if (cc < 0) return true;
+        if (cc > 0) return false;
+        if (a->tagStart < b->tagStart) return true;
+        if (a->tagStart > b->tagStart) return false;
+        if (a->tagEnd < b->tagEnd) return true;
+        if (a->tagEnd > b->tagEnd) return false;
+        if (a->strand < b->strand) return true;
+        if (a->strand > b->strand) return false;
+        return false;
+    });
+//    qsort(peaks, peaks.size(), sizeof(Peak *), &cmpPeaks);
 }
 
-int chrcmp(const void *chr1, const void *chr2) {
+int chrcmp(const std::string &chr1, const std::string &chr2) {
     static std::unordered_map<std::string, int> *chrIndex;
 
     if (chr1 == chr2) return 0;
-    if (chr1 == NULL) return -1;
-    if (chr2 == NULL) return 1;
-    char *c1 = *((char **) chr1);
-    char *c2 = *((char **) chr2);
-    int sc = strcmp(c1, c2);
-    if (sc == 0) return 0;
+    if (chr1.empty()) return -1;
+    if (chr2.empty()) return 1;
 
     if (chrIndex == NULL) {
         chrIndex = new std::unordered_map<std::string, int>(10000);
-        char *tmp = new char[1000];
         int index = 1;
+        std::string tmp;
         for (int i = 0; i <= 100; i++) {
-            sprintf(tmp, "chr%d", i);
+            tmp = "chr"+std::to_string(i);
             (*chrIndex)[tmp] = index++;
-            sprintf(tmp, "chr%d_random", i);
+            tmp = "chr"+std::to_string(i)+"_random";
             (*chrIndex)[tmp] = index++;
-            sprintf(tmp, "chr%dL", i);
+            tmp = "chr"+std::to_string(i)+"L";
             (*chrIndex)[tmp] = index++;
-            sprintf(tmp, "chr%dL_random", i);
+            tmp = "chr"+std::to_string(i)+"L_random";
             (*chrIndex)[tmp] = index++;
-            sprintf(tmp, "chr%dR", i);
+            tmp = "chr"+std::to_string(i)+"R";
             (*chrIndex)[tmp] = index++;
-            sprintf(tmp, "chr%dR_random", i);
+            tmp = "chr"+std::to_string(i)+"R_random";
             (*chrIndex)[tmp] = index++;
         }
-        delete[]tmp;
-        (*chrIndex)[tmp] = index++;
         (*chrIndex)["chrI"] = index++;
         (*chrIndex)["chrI"] = index++;
         (*chrIndex)["chrII"] = index++;
@@ -1150,56 +1069,39 @@ int chrcmp(const void *chr1, const void *chr2) {
         (*chrIndex)["genome"] = index++;
         (*chrIndex)["null"] = index++;
     }
-    int i1 = (*chrIndex)[c1];
-    int i2 = (*chrIndex)[c2];
-    //if (i1 == EMPTY_INT) fprintf(stderr, "Couldn't find anything for %s\n", c1);
-    //if (i2 == EMPTY_INT) fprintf(stderr, "Couldn't find anything for %s\n", c2);
-    if (i1 != EMPTY_INT && i2 != EMPTY_INT) {
-        if (i1 < i2) return -1;
-        if (i1 > i2) return 1;
+    auto it1 = chrIndex->find(chr1);
+    auto it2 = chrIndex->find(chr2);
+    auto end = chrIndex->end();
+
+    if (it1 != end && it2 != end) {
+        if (it1->second < it2->second) return -1;
+        if (it1->second > it2->second) return 1;
         return 0;
-    } else if (i1 != EMPTY_INT) {
+    } else if (it1 != end) {
         return -1;
-    } else if (i2 != EMPTY_INT) {
+    } else if (it2 != end) {
         return 1;
     }
-    return sc;
-}
-
-int cmpPeaks(const void *a, const void *b) {
-    char *ac = (*(Peak **) a)->chr;
-    char *bc = (*(Peak **) b)->chr;
-    int cc = chrcmp(&ac, &bc);
-    if (cc != 0) return cc;
-    int ap = (*(Peak **) a)->tagStart;
-    int bp = (*(Peak **) b)->tagStart;
-    if (ap < bp) return -1;
-    if (ap > bp) return 1;
-    int ad = (*(Peak **) a)->tagEnd;
-    int bd = (*(Peak **) b)->tagEnd;
-    if (ad < bd) return -1;
-    if (ad > bd) return 1;
-    char al = (*(Peak **) a)->strand;
-    char bl = (*(Peak **) b)->strand;
-    if (al < bl) return -1;
-    if (al > bl) return 1;
-    return 0;
+    return strcmp(chr1.c_str(), chr2.c_str());
 }
 
 void ChrPeaks::countPeakTagsLowMemory(std::unordered_map<std::string, double> &results, ChrTags *ct, char direction, int mode,
                                       ChrPeaks *excludePeaks) {
-
     ct->loadTags();
 
     int peakIndex = 0;
     //establish when we can start forgetting about peaks
     // peaks are already sorted by their starting positions;
+    auto numPeaks = peaks.size();
+
     int *finishedLength = new int[numPeaks];
     int *excludeFinishedLength = NULL;
+
     int excludePeakIndex = 0;
     if (excludePeaks != NULL) {
-        excludeFinishedLength = new int[excludePeaks->numPeaks];
+        excludeFinishedLength = new int[excludePeaks->peaks.size()];
     }
+
     double *peakTotals = new double[numPeaks];
     double *peakPositions = new double[numPeaks];
     for (int i = 0; i < numPeaks; i++) {
@@ -1217,7 +1119,7 @@ void ChrPeaks::countPeakTagsLowMemory(std::unordered_map<std::string, double> &r
     }
 
     if (excludePeaks != NULL) {
-        for (int i = 0; i < excludePeaks->numPeaks; i++) {
+        for (int i = 0; i < excludePeaks->peaks.size(); i++) {
             if (i == 0) {
                 excludeFinishedLength[i] = excludePeaks->peaks[i]->tagEnd;
             } else {
@@ -1238,20 +1140,20 @@ void ChrPeaks::countPeakTagsLowMemory(std::unordered_map<std::string, double> &r
         float v = i->v;
 
         //if excludePeaks are used, don't bother counting read if it overlaps with the exclude peaks
-        if (excludePeaks != NULL && excludePeakIndex < excludePeaks->numPeaks) {
+        if (excludePeaks != NULL && excludePeakIndex < excludePeaks->peaks.size()) {
             if (p < excludePeaks->peaks[excludePeakIndex]->tagStart) {
             } else {
                 int stop = 0;
                 while (p > excludeFinishedLength[excludePeakIndex]) {
                     excludePeakIndex++;
-                    if (excludePeakIndex >= excludePeaks->numPeaks) {
+                    if (excludePeakIndex >= excludePeaks->peaks.size()) {
                         stop = 1;
                         break;
                     }
                 }
                 if (stop == 0) {
                     int bad = 0;
-                    for (int j = excludePeakIndex; j < excludePeaks->numPeaks; j++) {
+                    for (int j = excludePeakIndex; j < excludePeaks->peaks.size(); j++) {
                         if (direction == STRAND_BOTH) {
                         } else if (direction == STRAND_SEPARATE || direction == POSITIVE_STRAND) {
                             if (excludePeaks->peaks[j]->strand != d) {
@@ -1329,12 +1231,13 @@ void ChrPeaks::countPeakTagsLowMemory(std::unordered_map<std::string, double> &r
     delete[]finishedLength;
     delete[]peakTotals;
     delete[]peakPositions;
-    if (excludeFinishedLength != NULL) delete[]excludeFinishedLength;
+    delete[]excludeFinishedLength;
 }
 
 void ChrPeaks::stitchRegions(PeakLibrary *regions, int maxDistance, int mode) {
+    auto numPeaks = peaks.size();
 
-    double *totals = new double[numPeaks];
+    auto *totals = new double[numPeaks];
     int *totalDist = new int[numPeaks];
     int *uniqmap = new int[numPeaks];
     for (int i = 0; i < numPeaks; i++) totals[i] = 0.0;
@@ -1400,7 +1303,7 @@ void ChrPeaks::stitchRegions(PeakLibrary *regions, int maxDistance, int mode) {
                             score = 1;
                         }
 
-                        double pmap = (double) peaks[j]->uniqMap;
+                        auto pmap = (double) peaks[j]->uniqMap;
                         if (pmap < 0) pmap = (double) (peaks[j]->end - peaks[j]->start);
                         if (uniqmap[totalIndex] < 10) uniqmap[totalIndex] = 10;
 
@@ -1449,13 +1352,12 @@ void ChrPeaks::stitchRegions(PeakLibrary *regions, int maxDistance, int mode) {
     }
     delete[]totals;
     delete[]totalDist;
+    delete[]uniqmap;
 }
 
 // class Peaks -----------------------------------------------
 
 Peak::Peak() {
-    name = NULL;
-    chr = NULL;
     refPos = 0;
     start = 0;
     end = 0;
@@ -1463,36 +1365,25 @@ Peak::Peak() {
     tagEnd = 0;
     priority = 0;
     strand = STRAND_POSITIVE;
-    seq = NULL;
     uniqMap = 0;
     v = 0.0;
     focusRatio = 0.0;
     data = NULL;
-    ogname = NULL;
-    exps = NULL;
-    numTags = NULL;
-    maxTags = NULL;
-    numExps = 0;
 }
 
-Peak::Peak(char *newname, char *originalName, const char *newchr, int newstart, int newend, int newRef, char dir,
+Peak::Peak(const std::string &newname, const std::string &originalName, const std::string &newchr, int newstart, int newend, int newRef, char dir,
            float value, float ratio, char *otherdata, int mappability, unsigned int newpriority) {
-    if (newname == NULL) {
-        int L = strlen(newchr) + 13 + 1 + 6;
-        name = new char[L];
-        sprintf(name, "%s-%d-%d", newchr, newstart, dir);
-        //fprintf(stderr, "name=%s \t %d\n",name,L);
+    if (newname.empty()) {
+        int L = newchr.size() + 13 + 1 + 6;
+        name = newchr + "-" + std::to_string(newstart) + "-" + dir;
     } else {
-        name = new char[strlen(newname) + 1];
-        strcpy(name, newname);
+        name = newname;
     }
-    ogname = NULL;
-    if (originalName != NULL) {
-        ogname = new char[strlen(originalName) + 1];
-        strcpy(ogname, originalName);
+
+    if (!originalName.empty()) {
+        ogname = originalName;
     }
-    chr = new char[strlen(newchr) + 1];
-    strcpy(chr, newchr);
+    chr = newchr;
     start = newstart;
     end = newend;
     tagStart = newstart;
@@ -1500,14 +1391,9 @@ Peak::Peak(char *newname, char *originalName, const char *newchr, int newstart, 
     refPos = newRef;
     strand = dir;
     v = value;
-    seq = NULL;
-    priority = priority;
-    focusRatio = focusRatio;
+    priority = newpriority;
+    focusRatio = ratio;
     uniqMap = mappability;
-    exps = NULL;
-    numTags = NULL;
-    maxTags = NULL;
-    numExps = 0;
     if (otherdata != NULL) {
         data = new char[strlen(otherdata) + 1];
         strcpy(data, otherdata);
@@ -1520,19 +1406,7 @@ Peak::Peak(char *newname, char *originalName, const char *newchr, int newstart, 
 }
 
 Peak::~Peak() {
-    if (name != NULL) delete[]name;
-    if (ogname != NULL) delete[]ogname;
-    if (chr != NULL) delete[]chr;
     if (data != NULL) delete[]data;
-    if (exps != NULL) {
-        for (int i = 0; i < numExps; i++) {
-            delete exps[i];
-        }
-        delete[]exps;
-    }
-    if (numTags != NULL) delete[]numTags;
-    if (maxTags != NULL) delete[]maxTags;
-    if (seq != NULL) delete[]seq;
 }
 
 
@@ -1540,40 +1414,17 @@ void Peak::print(FILE *fp) {
     char dir = '+';
     if (strand == 1) dir = '-';
     if (v < 1.0) {
-        fprintf(fp, "%s\t%s\t%d\t%d\t%c\t%.3f\t%.3f", name, chr, start, end, dir, v, focusRatio);
+        fprintf(fp, "%s\t%s\t%d\t%d\t%c\t%.3f\t%.3f", name.c_str(), chr.c_str(), start, end, dir, v, focusRatio);
     } else if (v < 10.0) {
-        fprintf(fp, "%s\t%s\t%d\t%d\t%c\t%.2f\t%.3f", name, chr, start, end, dir, v, focusRatio);
+        fprintf(fp, "%s\t%s\t%d\t%d\t%c\t%.2f\t%.3f", name.c_str(), chr.c_str(), start, end, dir, v, focusRatio);
     } else {
-        fprintf(fp, "%s\t%s\t%d\t%d\t%c\t%.1f\t%.3f", name, chr, start, end, dir, v, focusRatio);
+        fprintf(fp, "%s\t%s\t%d\t%d\t%c\t%.1f\t%.3f", name.c_str(), chr.c_str(), start, end, dir, v, focusRatio);
     }
     //fprintf(fp, "\t%d", uniqMap);
     if (data != NULL) {
         fprintf(fp, "\t%s", data);
     }
     fprintf(fp, "\n");
-}
-
-void Peak::addExp() {
-    Tag **newexps = new Tag *[numExps + 1];
-    int *newnumTags = new int[numExps + 1];
-    if (exps != NULL) {
-        for (int i = 0; i < numExps; i++) {
-            newexps[i] = exps[i];
-            newnumTags[i] = numTags[i];
-        }
-        delete[]exps;
-        delete[]numTags;
-    }
-
-    //we're going to hide this in the variable for now...
-    LinkedList *linkedlist = new LinkedList();
-    newexps[numExps] = (Tag *) linkedlist;
-    newnumTags[numExps] = 0;
-
-    numTags = newnumTags;
-    exps = newexps;
-
-    numExps++;
 }
 
 void Peak::addData(char *str) {
@@ -1589,26 +1440,6 @@ void Peak::addData(char *str) {
         delete[]olddata;
     }
     strcat(data, str);
-}
-
-void Peak::addTag(Tag *t, int expIndex) {
-
-    Tag *nt = new Tag();
-    nt->copy(t);
-    if (strand == 0) {
-        nt->p = nt->p - refPos;
-    } else {
-        nt->p = refPos - nt->p;
-        if (nt->d == 0) {
-            nt->d = 1;
-        } else {
-            nt->d = 0;
-        }
-    }
-    LinkedList *linkedlist = (LinkedList *) exps[expIndex];
-    linkedlist->add(nt);
-    //fprintf(stderr, "+ %.1f ",nt->v);
-    //numTags[expIndex]++;
 }
 
 void Peak::setPeakTagSizeFixed(int startOffset, int endOffset) {
@@ -1646,93 +1477,6 @@ void Peak::setOffset(int newoffset) {
     } else {
         refPos = end + newoffset;
     }
-}
-
-void Peak::sortTags(int expIndex) {
-
-    LinkedList *list = (LinkedList *) exps[expIndex];
-    Tag **array = (Tag **) list->toArray(numTags[expIndex]);
-    Tag *tagset = new Tag[numTags[expIndex]];
-    delete list;
-    exps[expIndex] = tagset;
-    for (int i = 0; i < numTags[expIndex]; i++) {
-        exps[expIndex][i].copy(array[i]);
-        delete array[i];
-    }
-    delete[]array;
-
-    for (int i = 0; i < numExps; i++) {
-        if (i == expIndex || expIndex == ALL_PEAK_EXPS) {
-            std::sort(exps[i], exps[i] + numTags[i], &cmpTags);
-        }
-    }
-}
-
-Tag *Peak::getCoverageTags(int expIndex, int fragLength, int &coveragePositions, char strandInfo) {
-
-    coveragePositions = numTags[expIndex] * 2;
-    Tag *coverageTags = new Tag[coveragePositions];
-
-    int cIndex = 0;
-    for (int i = 0; i < numTags[expIndex]; i++) {
-        Tag *t = &(exps[expIndex][i]);
-        if (strandInfo == STRAND_SEPARATE && t->d == 1) {
-            //fprintf(stderr, "skipping...\n");
-            continue;
-        }
-        if (strandInfo == POSITIVE_STRAND && t->d == 1) {
-            //fprintf(stderr, "skipping...\n");
-            continue;
-        }
-        if (strandInfo == NEGATIVE_STRAND && t->d == 0) {
-            //fprintf(stderr, "skipping...\n");
-            continue;
-        }
-        coverageTags[cIndex].v = t->v;
-        coverageTags[cIndex].p = t->p;
-        coverageTags[cIndex].d = 0;
-        coverageTags[cIndex].len = t->len;
-        cIndex++;
-        coverageTags[cIndex].d = 0;
-        coverageTags[cIndex].len = t->len;
-        if (t->d == 0) {
-            coverageTags[cIndex].p = t->p + fragLength;
-            coverageTags[cIndex].v = -1 * t->v;
-        } else {
-            coverageTags[cIndex].p = t->p - fragLength;
-            coverageTags[cIndex - 1].v = -1 * t->v;
-            coverageTags[cIndex].v = t->v;
-        }
-        //fprintf(stderr, "%d\n", coverageTags[cIndex].p+refPos);
-        cIndex++;
-    }
-    coveragePositions = cIndex;
-    if (coveragePositions < 1) {
-        delete[]coverageTags;
-        return NULL;
-    }
-
-    std::sort(coverageTags, coverageTags + coveragePositions, &cmpTags);
-
-    int last = 0;
-    for (int i = 1; i < coveragePositions; i++) {
-        if (coverageTags[i].p == coverageTags[last].p) {
-            coverageTags[last].v += coverageTags[i].v;
-        } else {
-            last++;
-            if (last == i) continue;
-            coverageTags[last].copy(&(coverageTags[i]));
-        }
-    }
-    coveragePositions = last + 1;
-
-    float total = 0.0;
-    for (int i = 0; i < coveragePositions; i++) {
-        total += coverageTags[i].v;
-        coverageTags[i].v = total;
-    }
-
-    return coverageTags;
 }
 
 //#########################################################################
@@ -2690,7 +2434,6 @@ void ChrTags::findPutativePeaks(PeakLibrary *putativePeaks, int peakSize, int mi
 
     char *mask = new char[size];
     int *centers = new int[size];
-    char *pname = new char[100];
     int pid = 1;
 
     for (int i = 0; i < size; i++) {
@@ -2730,10 +2473,11 @@ void ChrTags::findPutativePeaks(PeakLibrary *putativePeaks, int peakSize, int mi
                 end = maxEND;
             }
 
-            sprintf(pname, "%s-%d", chr.c_str(), pid++);
+//            sprintf(pname, "%s-%d", chr.c_str(), pid++);
             //sprintf(pname, "%d",rand());
             //fprintf(stderr, "%s\t%s\t%d\t%d\t%d\t%d\t%f\n",pname,chr,start,end,center,d,value);
-            putativePeaks->addPeak(pname, chr.c_str(), start, end, center, d, value, 0, NULL, -1, 0);
+            putativePeaks->addPeak(chr+"-"+std::to_string(pid), chr, start, end, center, d, value, 0, NULL, -1, 0);
+            pid += 1;
         }
         if (regionFlag == 0 || !mask[index]) {
             for (int j = index; j < size; j++) {

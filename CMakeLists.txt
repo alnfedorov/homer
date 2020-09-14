@@ -6,7 +6,7 @@ project(
         LANGUAGES CXX
 )
 
-set(LIBRARIES cpp/SeqTag.cpp cpp/statistics.cpp cpp/Hashtable.cpp)
+set(LIBRARIES cpp/SeqTag.cpp cpp/statistics.cpp)
 ## findPeaks
 #set(SOURCES cpp/findPeaks.cpp ${LIBRARIES})
 #add_executable(findPeaks ${SOURCES})
