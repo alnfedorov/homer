@@ -1,6 +1,7 @@
+#pragma once
 #include <cstdio>
-#include <cstdlib>
 
+#include <cstdlib>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <dirent.h>
@@ -9,37 +10,29 @@
 #include <climits>
 #include <algorithm>
 #include <pthread.h>
+#include <string>
+#include <map>
+#include <set>
+#include <unordered_set>
+#include <unordered_map>
+#include <vector>
+#include <functional>
+#include <sstream>
 
+#include <list>
 #include "Hashtable.h"
+
 #include "statistics.h"
 
-#ifndef SEQTAG_H
-#define SEQTAG_H
-
-#define WHITE_SPACE 7
-
-#define MAX_READ_LENGTH 32000
 #define MAX_TAGS_PER_BP 32000
 #define PEAK_LIBRARY_DEFAULT_SIZE 1000000
 
-#define PEAK_READ_MODE_NORMAL 0
-#define PEAK_READ_MODE_ANNOTATION 1
-#define PEAK_READ_MODE_COUNTING 2
-#define PEAK_READ_MODE_2DBED 3
-
-#define PE_READ_FILTER_KEEPBOTH 0
-#define PE_READ_FILTER_KEEPFIRST 1
-#define PE_READ_FILTER_KEEPSECOND 2
-
 #define FORMAT_UNKNOWN 0
 #define FORMAT_BED 3
-#define FORMAT_SAM 7 
-#define FORMAT_PEAK 8
+#define FORMAT_SAM 7
 
 #define MODE_UNIQUE 0
 #define MODE_KEEPONE 1
-#define MODE_KEEPALL 2
-#define MODE_BED_FORCE5TH 4
 
 #define NULL_REF -123456789
 #define NULL_OFFSET -123456789
@@ -49,28 +42,17 @@
 #define BOTH_STRANDS 2
 #define NULL_INT_VALUE -123456789
 
-#define TAGADJUST_DEFAULT 75
-#define TAGADJUST_AUTO -123456789
 #define FRAGMENT_LEN_AUTO -123456789
 #define FRAGMENT_LEN_GIVEN -12345
 #define FRAGMENT_LEN_PE -123456
 
 #define CIGAR_ERROR -12345678
 
-#define TOTAL_READS_TAGDIR_DEFAULT -1.0
-#define TOTAL_READS_TAGDIR_ALL -2.0
-
 #define COUNT_MODE_TOTAL 0
 #define COUNT_MODE_TBP 1
 #define COUNT_MODE_RATIO 2
 
 #define FINDPEAKS_MINDIST_DEFAULT 2.0
-
-#define TAGLIBRARY_SINGLE_FLAG 0
-#define TAGLIBRARY_PE_READ1_FLAG 1
-#define TAGLIBRARY_PE_READ2_FLAG 2
-
-#define FLOAT_ZERO 1e-30
 
 #define STRAND_POSITIVE 0
 #define STRAND_NEGATIVE 1 
@@ -87,8 +69,6 @@
 #define DIFFPEAK_MODE_DIFF 1
 #define DIFFPEAK_MODE_SAME 2
 #define DIFFPEAK_MODE_REV 3
-
-#define TAG_VALUE_RESOLUTION 1
 
 #define PEAKRATIO_TOLERANCE_BP 5
 
@@ -109,20 +89,15 @@
 
 class TagLibrary;
 class ChrTags;
-class LinkedTag;
-class LinkedPETag;
-class Tag;
-class PETag;
+struct Tag;
 class Peak;
 class ChrPeaks;
 class PeakLibrary;
 
 
-class PeakFinder {
-public:
+struct PeakFinder {
 	char* name;
-	char* directory;
-    char* outputFileName;
+    std::string outputFileName;
     int peakSize;
 	int localSize;
 	int inputSize;
@@ -152,8 +127,7 @@ public:
 	int tbpAuto;
 	int numPeaks;
     double regionSubDivision;
-	char* excludePeaksFile;
-	TagLibrary* tags;
+    TagLibrary* tags;
 	TagLibrary* input;
 	double * fdrTable;
 	int fdrSize;
@@ -175,13 +149,13 @@ public:
 	PeakLibrary* findPeaks();
 
     void addHeader(char*);
-
+    void print(FILE *fp);
     void setCMD(char* name);
-	void setDirectory(char* name);
-	void setOutputFile(char* name);
+
+    void setOutputFile(std::string name);
 	void setTagLibraries(TagLibrary* exp, TagLibrary* input);
-	void setMaxTBP(double,double);
-	void setGenomeSize(long long int);
+
+    void setGenomeSize(long long int);
 	void determineMaxTBP();
     void approxFdrTable();
 	void checkParameters();
@@ -191,220 +165,112 @@ public:
 
 class TagLibrary {
 public:
-	Hashtable* chrs;
+    std::map<std::string, ChrTags*> chrs;
+
     double totalTags;
-	long long int totalPositions;
-    char* name;
-    char* directory;
-    int medianTagsPerPosition;
-	int fragmentLengthEstimate;
-	int fragmentLengthSetting;
-	long long int gsizeEstimate;
-    double averageTagsPerPosition;
-	double averageTagLength;
+    long long int totalPositions;
+
 	double tbp;
-	double parseAlignmentCpGMinValue;
-    float maxtbp;
-	float mintbp;
+	float maxtbp;
+
 	double minmapq;
-	int revStrand;
-	int singleFile;
-	int minReadLength;
-	int maxReadLength;
-	int peReadFlag;
-    double manualTagTotal;
-	double totalTagsMultiMappers;
-	long long int totalPosMultiMappers;
+	size_t minReadLength;
+	size_t maxReadLength;
 
-    char* singleFilename;
-	FILE* tagFile;
-    char* restrictionSite;
-    int sspeFlag;
+	int fragmentLengthEstimate;
+	int peakSizeEstimate;
 
-    int pairedEndFlag;
-	int mCflag;
-    double localInteractionFraction;
-	double interChrInteractionFraction;
-	Hashtable* chrNames;
-	
-	TagLibrary(char* directory);
-	~TagLibrary();
+	double averageTagsPerPosition;
+	long long int gsizeEstimate;
+	double averageTagLength;
 
-    void readAndSave();
-	void parseAlignmentFiles(char** files, int numFiles, int format, int mode,
-								char** tagDirs, int numDirs,char** tagFiles, int numTagFiles);
+    bool sspeFlag;
+    bool pairedEndFlag;
+
+    TagLibrary();
+    ~TagLibrary();
+    void autoCorrelateTags(int windowSize, double maxTags);
+    void parseAlignmentFiles(const std::vector<std::string>& files, const int& format, const int& mode);
 	void setMaxTBP(float maxTagsPerBp);
-	void setMinTBP(float minTagsPerBp);
-	void setSingleFile(int flag);
-	void setTagAdjust(int centerDistance);
-	void setFragLength(int fragLength);
+
 	void setSingleRead(int singleReadFlag);
-	void addAlignedPETag(PETag* petag);
 
     double* getTagCountDistribution(FILE* nfp, int &max);
-	double* getTagLengthDistribution(FILE* nfp, int &max);
-
+    double* getTagLengthDistribution(FILE* nfp, int &max);
     double getAdjustedTagTotal();
 
-
-    void printTagInfo();
-	void printTagInfo(FILE*);
-
-    void setName(char*);
-
     //internal functions
-	void readAlignment(char* files, int format, int mode, int PEflag);
-	void readPEAlignment(char* files, int format, int mode);
-	void addTagDirectory(char* tagDir);
-	void readSingleTagFile();
-	void readNewTagFile(char* filename);
-
-    void makeDirectory();
-
-    int getRightCoordFromCIGAR(char* str, int dir, char* cigarCodes, int* cigarLens, int &numCodes, int &initLen);
-
-    void addAlignedTag(char* name, char* chr,int pos,char dir,int length, float value,int PEflag);
-	char* getTagFileName(char* chr);
-	char* getDirFileName(char* filename);
-	void optimizeTagFiles();
+    void readAlignment(char *file, int format, int mode);
+    int getRightCoordFromCIGAR(std::string& str, int dir, char* cigarCodes, int* cigarLens, int &numCodes, int &initLen);
+    void addAlignedTag(const std::string &name, const std::string &chr, int pos, char dir, int length, float value);
+    void optimizeTags();
 
     PeakLibrary* findPutativePeaks(int peakSize, int minDist, char strand, float minCount);
-
-    double* getPETagDistribution(int windowSize, int largeWindowSize, int largeResolution,
-					char* outputPrefix, int &arrayLength);
 };
 
 
 class ChrTags {
 public:
-	Tag* tags;
-	PETag* petags;
-	int totalPositions;
-	double totalTags;
-    float* gcFreq;
-	int mCflag;
-	int singleFile;
-    int loaded;
-	int adjusted;
-	int optimizedFlag;
-	int optimizeOverride;
-	float maxtbp;
-	float mintbp;
-	int tagAdjust;
-	int dontSAVE;
+    std::map<int, Tag*> _tags_for_maxtbp;
+    std::map<int, size_t> _tags_size_for_maxtbp;
+    std::map<int, double> _total_tags_for_maxtbp;
+    std::vector<Tag> _zeromaxtbp;
+    std::function<void()> callback;
+
+    double totalTags;
+    float maxtbp;
 	long long int appearentSize;
-	int revStrand;
-	char* chr;
-	char* tagFile;
-	FILE* tagfp;
-	FILE* tagfpR1;
-	FILE* tagfpR2;
-	LinkedTag* firstTag;
-	LinkedTag* linkTag;
-	LinkedPETag* firstPETag;
-	LinkedPETag* linkPETag;
-	int numLinks;
+    std::string chr;
 	int pairedEndFlag;
-	int forceSingleReadFlag;
-    Hashtable* chrNames;
+	bool forceSingleReadFlag;
 
-	char* seq;
+    explicit ChrTags(std::string newchr);
+    ChrTags(std::string newchr, std::function<void()> callback);
+    ~ChrTags();
+
+    Tag* tags() {
+        return _tags_for_maxtbp[maxtbp];
+    };
+
+    size_t size() {
+        return _tags_size_for_maxtbp[maxtbp];
+    };
+
+    void addAlignedTag(const std::string &name, int pos, char dir, int length, float value);
 
 
-    ChrTags(char* chr);
-	~ChrTags();
-
-	void adjustTags();
-	void readAndSave();
-
-    void readTagFile();
-
-    void addTag(int pos, char dir,int length, float value);
-	void addPETag(char* c1, int p1, char d1,int len1, char* c2, int p2, char d2, int len2,float value);
-	void printAlignedTag(char* name, int pos, char dir,int length, float value,int PEflag);
-	void printAlignedPETag(PETag* petag, int revFlag);
-	void optimizeTags();
-	void optimizePETags();
-	void optimizeTagFile();
+    void optimizeTags(int tagAdjust);
 	void setMaxTBP(float maxTagsPerBp);
-	void setMinTBP(float minTagsPerBp);
-	void setTagAdjust(int centerDistance);
-	void setTagFile(char* file);
-	void openTagFile(char* mode);
-	void closeTagFile();
-	void print();
 
     void findPutativePeaks(PeakLibrary* putativePeaks, int peakSize, int minDist, char strand, double minCount);
+    void autoCorrelateTags(double* sameStrand, double* diffStrand,int windowSize,
+                           double maxTags,double &totalCount,double* sameStrandN, double* diffStrandN);
 
     void getTagCountDistribution(double* d, int max,int scaleFactor);
-	void getTagLengthDistribution(double* d, int max);
-
-    int getPETagDistribution(double* sameStrand, double* diffStrand, int windowSize,
-                            double * largeWindow,int resolution, int largeLength);
+    void getTagLengthDistribution(double* dist, int max);
 
     void loadTags();
-	void freeTags();
-
+    void clipTags();
+    void adjustTags(int tagAdjust);
+    void sortMergeTags();
+    void freeTags();
 };
-int cmpTags(const void*, const void*);
-int cmpPETags(const void*, const void*);
 
-class Tag {
-public:
+bool cmpTags(const Tag&, const Tag&);
+
+struct Tag {
 	int p; // position
 	int len; // position
 	float v; // value = number of tags
 	char d; // direction 0=+,1=-
-	Tag();
+	Tag() = default;
 	void copy(Tag* src);
-	void print(FILE* fp,char* chr);
-
-	static int precision;
-};
-
-class LinkedTag : public Tag {
-public:
-	LinkedTag* tag;
-	LinkedTag(int,char,int,float,LinkedTag*);
-	~LinkedTag() = default;
-};
-
-class PETag {
-public: 
-	char* name;
-	char* chr1;
-	int p1; 
-	char d1;
-	int len1;
-	char* chr2;
-	int p2; 
-	char d2;
-	int len2;
-	float v;
-	PETag();
-	PETag(char* name,char* chr, int p, char d, float v,int len);
-	~PETag();
-	void init();
-	void copy(PETag* src);
-	void print(FILE*);
-
-    void print(FILE*,int revFlag);
-
-	static int precision;
-};
-
-
-class LinkedPETag : public PETag {
-public:
-	LinkedPETag* tag;
-	LinkedPETag(char* nc1, int np1, char nd1,int nlen1,char* nc2, int np2, char nd2,int,float,LinkedPETag*);
-	~LinkedPETag() = default;
 };
 
 class PeakLibrary {
 public:
-	Hashtable* chrs; // holds pointers to ChrPeak objects
-	Hashtable* peaks; // holds pointers to Peak objects
+	std::unordered_map<std::string, ChrPeaks*> chrs; // holds pointers to ChrPeak objects
+	std::unordered_map<std::string, Peak*> peaks; // holds pointers to Peak objects
 	char* name;
 	char* genome;
 	int numPeaks;
@@ -414,24 +280,19 @@ public:
 	int duplicateWarningFlag;
 	Peak** peakOrder;
 
-    Inttable* duplicates;
+    std::unordered_map<std::string, int>* duplicates;
 
     TagLibrary** exps;
-	int numExps;
 
 
-	PeakLibrary();
-	PeakLibrary(char* file, int mode);
-	PeakLibrary(int expectedNumberOfPeaks); // default is 100000
+    PeakLibrary();
+
+    PeakLibrary(int expectedNumberOfPeaks); // default is 100000
 	void initialize(int expectedNumPeaks);
 	~PeakLibrary();
 	void print(FILE*);
 
-    void readPeakFile(char* filename,int mode);
-	void setDefaultPeakOrder();
-
-    //pass NULL to trim peak positions using the current sizes
-	int addTagLibrary(TagLibrary* t);
+    void setDefaultPeakOrder();
 
     PeakLibrary* stitchRegions(int maxDistance,int mode) const;
 	PeakLibrary* getDifferentialPeaks(TagLibrary* tags, TagLibrary* input,
@@ -441,25 +302,19 @@ public:
 	PeakLibrary* filterClonalPeaks(TagLibrary* tags, int peakSize,
                         double threshold, int mode, char strand);
 
-    void centerPeaks(TagLibrary* tags, int peakSize,char strand);
-
-    void centerNFR(TagLibrary* tags, int peakSize,char strand,int nfrSize);
-
-    Doubletable* countPeakTagsLowMemory(TagLibrary* tags, char direction,int mode,PeakLibrary* exclude);
+    std::unordered_map<std::string, double>
+    countPeakTagsLowMemory(TagLibrary* tags, char direction, int mode, PeakLibrary* excludePeaks);
 
     void setPeakTagSizeRefPos(int offset, int startOffset, int endOffset);
 	void setPeakTagSizeFixed(int startOffset, int endOffset);
 
-    void sortPeakTags(int expIndex);
-	Peak* addPeak(char* name, char* chr,int start, int end, int midpoint, char dir, float value, 
-						float ratio, char* extradata, int mappability, unsigned int priority);
+    Peak* addPeak(char* name, const char *chr, int start, int end, int midpoint, char dir, float value,
+                  float ratio, char* extraData, int mappability, unsigned int priority);
 
     void normalizePeakScore(float normFactor);
 	void addPeak(Peak* p);
 
     void sortChr();
-
-    void sortKeys(char**);
 
 };
 
@@ -474,11 +329,9 @@ public:
 	void addPeak(Peak* p);
 	void sort();
 
-    void addTagLibrary(ChrTags* t,int libraryIndex);
-
     void stitchRegions(PeakLibrary* regions, int maxDistance, int mode);
 
-    void countPeakTagsLowMemory(Doubletable* results, ChrTags* ct,char direction, int mode,ChrPeaks* exclude);
+    void countPeakTagsLowMemory(std::unordered_map<std::string, double> &results, ChrTags* ct, char direction, int mode, ChrPeaks* excludePeaks);
 
 };
 
@@ -508,14 +361,11 @@ public:
 
 	Peak();
 
-    Peak(char* name,char* originalName, char* chr, int start, int end,int midpoint, char dir, float value,
-				float focusRatio, char* otherdata,int mappability,unsigned int priority);
+    Peak(char* name, char* originalName, const char *chr, int start, int end, int midpoint, char dir, float value,
+         float focusRatio, char* otherdata, int mappability, unsigned int priority);
 	~Peak();
 
     Tag* getCoverageTags(int expIndex, int fragLength, int& coveragePositions,char strand);
-	void centerPeak(int expIndex,int fragLength,char strand);
-
-    void centerNFR(int expIndex,int fragLength,char strand,int nfrSize,int nucSize);
 
     void print(FILE* fp);
 
@@ -544,14 +394,7 @@ public:
 int cmpDoubleIndex(const void* a, const void* b);
 int cmpPeaks(const void*, const void*);
 
-void split(char* string, char** cols, int &numCols, char delim);
-int checkInt(char* str);
-int checkStrand(char* str);
-
-char* unzipFileIfNeeded(char* file, int &zipFlag, int &format);
+char* unzipFileIfNeeded(const std::string &file, int &zipFlag, int &curFormat);
 void rezipFileIfNeeded(char* file, int zipFlag);
 
 int chrcmp(const void* chr1, const void* chr2);
-
-
-#endif
