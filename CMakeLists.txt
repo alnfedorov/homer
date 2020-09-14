@@ -30,7 +30,7 @@ project(
 #target_compile_options(callPeaks PRIVATE -std=c++17 -g -O0)
 #
 ## python bindings - pybind
-#add_subdirectory(third_party)
+add_subdirectory(third_party)
 
 set(SOURCES pybindings/pyhomer.cpp ${LIBRARIES})
 pybind11_add_module(pyhomer MODULE THIN_LTO ${SOURCES})
