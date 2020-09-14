@@ -1771,52 +1771,72 @@ void TagLibrary::setSingleRead(int flag) {
     }
 }
 
+std::string random_string( size_t length )
+{
+    auto randchar = []() -> char
+    {
+        const char charset[] =
+                "0123456789"
+                "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                "abcdefghijklmnopqrstuvwxyz";
+        const size_t max_index = (sizeof(charset) - 1);
+        return charset[ rand() % max_index ];
+    };
+    std::string str(length,0);
+    std::generate_n( str.begin(), length, randchar );
+    return str;
+}
+
 char *unzipFileIfNeeded(const std::string &file, int &zipFlag, int &curFormat) {
     zipFlag = 0;
     if (file.empty()) {
         return NULL;
     }
     int len = file.size();
-    char *newName = new char[len + 1];
+    std::string newName = file;
     char *command = new char[100 + 2 * len + 1];
-    strcpy(newName, file.c_str());
     if (len > 4) {
         if (file[len - 3] == '.' && file[len - 2] == 'g' && file[len - 1] == 'z') {
             //gzipped file
             fprintf(stderr, "\tTreating %s as a GNU zip file\n", file.c_str());
-            newName[len - 3] = '\0';
+            newName.resize(len - 3);
+            newName += random_string(10);
             zipFlag = ZIPPED_FLAG_GZ;
-            sprintf(command, "gunzip -c \"%s\" > \"%s\"", file.c_str(), newName);
+            sprintf(command, "gunzip -c \"%s\" > \"%s\"", file.c_str(), newName.c_str());
             (void) system(command);
         } else if (file[len - 4] == '.' && file[len - 3] == 'b' && file[len - 2] == 'z' && file[len - 1] == '2') {
             //bz2 zipped file
             fprintf(stderr, "\tTreating %s as a bz2 zip file\n", file.c_str());
-            newName[len - 4] = '\0';
+            newName.resize(len - 4);
+            newName += random_string(10);
             zipFlag = ZIPPED_FLAG_BZ2;
-            sprintf(command, "bunzip2 -c \"%s\" > \"%s\"", file.c_str(), newName);
+            sprintf(command, "bunzip2 -c \"%s\" > \"%s\"", file.c_str(), newName.c_str());
             (void) system(command);
         } else if (file[len - 4] == '.' && file[len - 3] == 'z' && file[len - 2] == 'i' && file[len - 1] == 'p') {
             //zip file
             fprintf(stderr, "\tTreating %s as a zip file\n", file.c_str());
-            newName[len - 4] = '\0';
+            newName.resize(len - 4);
+            newName += random_string(10);
             zipFlag = ZIPPED_FLAG_ZIP;
-            sprintf(command, "unzip -p \"%s\" > \"%s\"", file.c_str(), newName);
+            sprintf(command, "unzip -p \"%s\" > \"%s\"", file.c_str(), newName.c_str());
             (void) system(command);
         } else if (file[len - 4] == '.' && file[len - 3] == 'b' && file[len - 2] == 'a' && file[len - 1] == 'm') {
             //zip file
             fprintf(stderr, "\tTreating %s as a bam file\n", file.c_str());
-            newName[len - 4] = '\0';
+            newName.resize(len - 4);
+            newName += random_string(10);
             zipFlag = ZIPPED_FLAG_BAM;
             curFormat = FORMAT_SAM;
-            sprintf(command, "samtools view -h \"%s\" > \"%s\"", file.c_str(), newName);
+            sprintf(command, "samtools view -h \"%s\" > \"%s\"", file.c_str(), newName.c_str());
             (void) system(command);
         } else {
             //not recognized, or not zipped...
         }
-
     }
     delete[]command;
-    return newName;
+    char *newNam_c_str = new char[newName.size() + 10];
+    strcpy(newNam_c_str, newName.c_str());
+    return newNam_c_str;
 }
 
 void rezipFileIfNeeded(char *file, int zipFlag) {
@@ -1833,13 +1853,13 @@ void rezipFileIfNeeded(char *file, int zipFlag) {
 
 void TagLibrary::parseAlignmentFiles(const std::vector<std::string>& files, const int& format, const int& mode) {
 //    makeDirectory();
-
+    srand(time(NULL));
     for (auto& file: files) {
         fprintf(stderr, "\n");
         int zippedFlag = 0;
         int currentFormat = format;
         char *workingFilename = unzipFileIfNeeded(file.c_str(), zippedFlag, currentFormat);
-        fprintf(stderr, "\tReading alignment file %s\n", file.c_str());
+        fprintf(stderr, "\tReading alignment file %s\n", workingFilename);
         readAlignment(workingFilename, currentFormat, mode);
         rezipFileIfNeeded(workingFilename, zippedFlag);
     }
