@@ -121,8 +121,10 @@ PYBIND11_MODULE(pyhomer, m) {
                                 ptr->_tags_for_maxtbp[maxtbp] = (Tag *) array.mutable_data();
                                 arrays.push_back(array.base());
                             }
-                            ptr->callback = [arrays]() {
-                                std::cout << "DESTROYED" << std::endl;
+                            ptr->callback = [arrays, ptr]() {
+                                // they will be dropped by arrays destructor
+                                for (auto& it: ptr->_tags_for_maxtbp)
+                                    it.second = NULL;
                             };
                             return ptr;
                         };
