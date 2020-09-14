@@ -2134,7 +2134,6 @@ void TagLibrary::optimizeTags() {
     totalTags = 0;
     totalPositions = 0;
 
-    setMaxTBP(maxtbp);
     int tagAdjust = fragmentLengthEstimate / 2;
 
     gsizeEstimate = 0;
@@ -2151,6 +2150,8 @@ void TagLibrary::optimizeTags() {
     fprintf(stderr, "\tEstimated genome size = %lld\n", gsizeEstimate);
     fprintf(stderr, "\tTotal Tags = %.1f\n", totalTags);
     fprintf(stderr, "\tTotal Positions = %lld\n", totalPositions);
+
+    setMaxTBP(maxtbp);
 
     if (gsizeEstimate > 1) {
         tbp = totalTags / gsizeEstimate;
@@ -2507,12 +2508,21 @@ void ChrTags::optimizeTags(int tagAdjust) {
 }
 
 void ChrTags::sortMergeTags() {
-    auto& tags = _zeromaxtbp;
-    auto size = tags.size();
+    Tag *tags;
+    size_t size;
 
+    auto it = _tags_for_maxtbp.find(0);
+    if (it == _tags_for_maxtbp.end()){
+        tags = _zeromaxtbp.data();
+        size = _zeromaxtbp.size();
+    }
+    else {
+        tags = it->second;
+        size = _tags_size_for_maxtbp[0];
+    }
     //fprintf(stderr, "%s  - optimizedFlag = %d\n", chr, optimizedFlag);
 
-    std::sort(tags.begin(), tags.end(), &cmpTags);
+    std::sort(tags, tags + size, &cmpTags);
 
     // merge tags if needed
     size_t last = 0;
@@ -2536,11 +2546,16 @@ void ChrTags::sortMergeTags() {
             tags[last].copy(&tags[i]);
         }
     }
-    _zeromaxtbp.resize(last + 1);
+    if (it == _tags_for_maxtbp.end()) {
+        _zeromaxtbp.resize(last + 1);
+        _tags_size_for_maxtbp[0] = _zeromaxtbp.size();
+        _tags_for_maxtbp[0] = _zeromaxtbp.data();
+    }
+    else {
+        _tags_size_for_maxtbp[0] = last + 1;
+    }
 
-    _total_tags_for_maxtbp[maxtbp] = totalTags;
-    _tags_size_for_maxtbp[maxtbp] = _zeromaxtbp.size();
-    _tags_for_maxtbp[maxtbp] = _zeromaxtbp.data();
+    _total_tags_for_maxtbp[0] = totalTags;
 }
 
 bool cmpTags(const Tag& a, const Tag& b) {
@@ -2558,10 +2573,13 @@ void ChrTags::setMaxTBP(float max) {
     maxtbp = max;
     auto it = _tags_for_maxtbp.find(maxtbp);
     if (it == _tags_for_maxtbp.end()) {
-        Tag *arr = new Tag[_zeromaxtbp.size()];
-        std::copy(_zeromaxtbp.begin(), _zeromaxtbp.end(), arr);
+        auto size = _tags_size_for_maxtbp[0];
+        auto tags = _tags_for_maxtbp[0];
+
+        Tag *arr = new Tag[size];
+        std::copy(tags, tags + size, arr);
         _tags_for_maxtbp[maxtbp] = arr;
-        _tags_size_for_maxtbp[maxtbp] = _zeromaxtbp.size();
+        _tags_size_for_maxtbp[maxtbp] = size;
         clipTags();
     }
     totalTags = _total_tags_for_maxtbp[maxtbp];

@@ -29,8 +29,6 @@ TagLibrary* load(const std::vector<std::string>& files) {
     constexpr double autoCorrMaxTags = 1e9;
     library->autoCorrelateTags(autoCorrRange, autoCorrMaxTags);
     library->optimizeTags();
-    library->setMaxTBP(1);
-    library->setMaxTBP(0);
     return library;
 }
 
