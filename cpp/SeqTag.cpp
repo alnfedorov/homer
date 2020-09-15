@@ -109,11 +109,11 @@ void PeakFinder::setOutputFile(std::string fname) {
 
 void PeakFinder::determineMaxTBP() {
     maxtbp = 1.0;
-    fprintf(stderr, "\tTotal Tags = %.1lf\n", totalTags);
-    fprintf(stderr, "\tTags per bp = %.6lf\n", tbp);
+//    fprintf(stderr, "\tTotal Tags = %.1lf\n", totalTags);
+//    fprintf(stderr, "\tTags per bp = %.6lf\n", tbp);
     if (tbp > tbpThreshold) maxtbp = floor(tbp / tbpThreshold);
     if (tbpInput > tbpThreshold) floor(tbp / tbpThreshold);
-    fprintf(stderr, "\tMax tags per bp set automatically to %.1f\n", maxtbp);
+//    fprintf(stderr, "\tMax tags per bp set automatically to %.1f\n", maxtbp);
 }
 
 void PeakFinder::checkParameters() {
@@ -122,8 +122,8 @@ void PeakFinder::checkParameters() {
         if (tags->gsizeEstimate > 10 && tags->gsizeEstimate < gsize &&
             gsize == ((long long int) DEFAULT_GSIZE)) {
             gsize = tags->gsizeEstimate;
-            fprintf(stderr, "\t!!! Estimated genome size (from tag directory) is smaller than default\n");
-            fprintf(stderr, "\t    genome size.  Using estimate (%lld) [to change specify -gsize]\n", gsize);
+//            fprintf(stderr, "\t!!! Estimated genome size (from tag directory) is smaller than default\n");
+//            fprintf(stderr, "\t    genome size.  Using estimate (%lld) [to change specify -gsize]\n", gsize);
             //gsize *= 2;
         }
         tbp = tags->totalTags / (double) gsize;
@@ -150,9 +150,9 @@ void PeakFinder::checkParameters() {
         tags->setMaxTBP(maxtbp);
     }
 
-    if (strand == STRAND_SEPARATE) {
-        fprintf(stderr, "\tFinding tags on separate strands: doubling effective genome size\n");
-    }
+//    if (strand == STRAND_SEPARATE) {
+//        fprintf(stderr, "\tFinding tags on separate strands: doubling effective genome size\n");
+//    }
 
 }
 
@@ -161,10 +161,10 @@ PeakLibrary *PeakFinder::findPeaks() {
 
     int curMinDist = minDist;
     if (regionFlag == 0) {
-        fprintf(stderr, "\tFinding peaks of size %d, no closer than %d\n", peakSize, minDist);
+//        fprintf(stderr, "\tFinding peaks of size %d, no closer than %d\n", peakSize, minDist);
     } else {
-        fprintf(stderr, "\tInitially finding peaks of size %d bp for stitching into regions", peakSize);
-        fprintf(stderr, " with %d bp stitching size)\n", minDist);
+//        fprintf(stderr, "\tInitially finding peaks of size %d bp for stitching into regions", peakSize);
+//        fprintf(stderr, " with %d bp stitching size)\n", minDist);
         curMinDist = (int) (-1 * (peakSize / regionSubDivision));
     }
 
@@ -179,8 +179,8 @@ PeakLibrary *PeakFinder::findPeaks() {
     {
         PeakLibrary *putativePeaks = tags->findPutativePeaks(peakSize, curMinDist, strand, minTagThresh);
 
-        fprintf(stderr, "\t\tTags Used for cluster (less clonal tags) = %.1lf / %.1lf\n",
-                tagsUsedForClustering, totalTags);
+//        fprintf(stderr, "\t\tTags Used for cluster (less clonal tags) = %.1lf / %.1lf\n",
+//                tagsUsedForClustering, totalTags);
 
         // remove peaks not meeting fdr levels or poisson p-value or absolute tag thresh
         approxFdrTable();
@@ -220,13 +220,13 @@ PeakLibrary *PeakFinder::findPeaks() {
     }
 
     if (regionFlag) {
-        fprintf(stderr, "\tStitching together putative peaks into regions\n");
+//        fprintf(stderr, "\tStitching together putative peaks into regions\n");
         PeakLibrary *regions = filteredPeaks->stitchRegions(minDist, stitchMode);
         delete filteredPeaks;
         filteredPeaks = regions;
 
         if (input != NULL && inputFold > 0) {
-            fprintf(stderr, "\tChecking regions against input...\n");
+//            fprintf(stderr, "\tChecking regions against input...\n");
             tags->setMaxTBP(0);
             input->setMaxTBP(0);
             filteredPeaks->setPeakTagSizeFixed(0, 0);
@@ -310,7 +310,7 @@ PeakLibrary *PeakFinder::filterPeaks(PeakLibrary *putativePeaks) {
         peakHeights[index] += 1.0;
     }
 
-    fprintf(stderr, "\t\tThreshold\tPeak Count\tExpected Peak Count\tFDR\tPoisson\n");
+//    fprintf(stderr, "\t\tThreshold\tPeak Count\tExpected Peak Count\tFDR\tPoisson\n");
     for (int i = fdrSize - 2; i >= 0; i--) {
         peakHeights[i] += peakHeights[i + 1];
         double cfdr = 0.0;
@@ -322,15 +322,15 @@ PeakLibrary *PeakFinder::filterPeaks(PeakLibrary *putativePeaks) {
         }
         if (cfdr > fdr / 10000.0) {// && i <= 50) {
             if (cfdr > 1.0) cfdr = 1.0;
-            fprintf(stderr, "\t\t%d\t%.3lf\t%.3lf\t%.2le\t%.2le\n", i, peakHeights[i], fdrTable[i], cfdr,
-                    poissonTable[i]);
+//            fprintf(stderr, "\t\t%d\t%.3lf\t%.3lf\t%.2le\t%.2le\n", i, peakHeights[i], fdrTable[i], cfdr,
+//                    poissonTable[i]);
         }
     }
 
     if (filterMode == PEAKFINDER_FILTER_MODE_FDR) {
         poisson = poissonTable[(int) fdrThresh];
-        fprintf(stderr, "\t%.2lf%% FDR Threshold set at %.1f (poisson pvalue ~ %.2le)\n",
-                100.0 * fdr, fdrThresh, poisson);
+//        fprintf(stderr, "\t%.2lf%% FDR Threshold set at %.1f (poisson pvalue ~ %.2le)\n",
+//                100.0 * fdr, fdrThresh, poisson);
     }
 
     auto *goodPeaks = new PeakLibrary();
@@ -360,7 +360,7 @@ PeakLibrary *PeakFinder::filterPeaks(PeakLibrary *putativePeaks) {
         }
     }
     delete[]peakHeights;
-    fprintf(stderr, "\t%d peaks passed threshold\n", numGood);
+//    fprintf(stderr, "\t%d peaks passed threshold\n", numGood);
     goodPeaks->sortChr();
 
     return goodPeaks;
@@ -445,7 +445,7 @@ void PeakFinder::approxFdrTable() {
     if (strand != STRAND_BOTH) {
         tpp = tbp * ((double) peakSize / 2.0);
     }
-    fprintf(stderr, "\tExpected tags per peak = %lf (tbp = %lf)\n", tpp, tbp);
+//    fprintf(stderr, "\tExpected tags per peak = %lf (tbp = %lf)\n", tpp, tbp);
 
     //this is the toughest part - and is a little empirical based on randomized tag positions
     double numTests = 2.0 * gsize / ((double) peakSize);
@@ -456,7 +456,7 @@ void PeakFinder::approxFdrTable() {
     }
     if (strand == STRAND_SEPARATE) {
         numTests *= 2;
-        fprintf(stderr, "\tFinding tags on separate strands: doubling effective genome size\n");
+//        fprintf(stderr, "\tFinding tags on separate strands: doubling effective genome size\n");
     }
 
     fdrSize = PEAKFINDER_FDRSIZE;
@@ -483,7 +483,7 @@ void PeakFinder::approxFdrTable() {
         }
     }
     if (filterMode == PEAKFINDER_FILTER_MODE_POISSON) {
-        fprintf(stderr, "\tPoisson Threshold set at %d tags\n", (int) poissonThresh);
+//        fprintf(stderr, "\tPoisson Threshold set at %d tags\n", (int) poissonThresh);
     }
        //exit(0);
 
@@ -2396,8 +2396,8 @@ void ChrTags::findPutativePeaks(PeakLibrary *putativePeaks, int peakSize, int mi
         maxEND = tags[size - 1].p;
     }
 
-    fprintf(stderr, "\t\tFinding peaks on %s (minCount=%.1lf), total tags positions = %zu\n",
-            chr.c_str(), minCount, size);
+//    fprintf(stderr, "\t\tFinding peaks on %s (minCount=%.1lf), total tags positions = %zu\n",
+//            chr.c_str(), minCount, size);
 
     for (int i = 0; i < size; i++) {
         float v = tags[i].v;
